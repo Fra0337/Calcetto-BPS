@@ -7,6 +7,7 @@
 <title>Calcetto BPS</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <style>
   :root { --red: #C0392B; --red-dark: #96281B; --off-white: #F5F0EE; --gray: #888; --green: #27AE60; --yellow: #F39C12; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -168,6 +169,11 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// EmailJS
+emailjs.init('flrbP3X7zlQjyUBw4');
+const EMAILJS_SERVICE = 'service_luqamhc';
+const EMAILJS_TEMPLATE = '__ejs-test-mail-service__';
+
 const SUPABASE_URL = 'https://txbdwhsycblubqeissuf.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR4YmR3aHN5Y2JsdWJxZWlzc3VmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1MTQ0NDUsImV4cCI6MjA4OTA5MDQ0NX0.G-k25oWhaBsWp0B5TyPsPF9EnRzIKjopOPGnmmF25W0';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -343,6 +349,10 @@ async function signUp() {
   }
 
   const msg = isWaiting ? `🎉 ${name}, sei in lista d'attesa!` : `🎉 ${name}, sei iscritto alla partita!`;
+
+  // Invia email di conferma al giocatore
+  sendEmailConferma(name, email, isWaiting);
+
   await loadMatch();
   setTimeout(() => {
     const s = document.getElementById('successMsg');
@@ -360,6 +370,7 @@ async function removePlayer(id) {
     const firstWaiting = players.find(p => p.waiting && p.id!==id);
     if (firstWaiting) {
       await sb.from('players').update({ waiting: false }).eq('id', firstWaiting.id);
+      sendEmailPromozione(firstWaiting);
       showToast(`${firstWaiting.name} promosso dalla lista d'attesa! 🎉`);
     }
   }
@@ -404,6 +415,8 @@ async function createMatch() {
   if (error) { showToast('❌ Errore: '+error.message); return; }
   closeAdmin(); showToast('✅ Partita creata!');
   await loadMatch();
+  // Invia email a tutti gli iscritti precedenti
+  if (players.length > 0) sendEmailNuovaPartita(players);
 }
 
 async function deleteMatch() {
@@ -435,6 +448,58 @@ function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),3000);
+}
+
+// ─── EMAIL ────────────────────────────────────────────────
+function sendEmailConferma(name, email, isWaiting) {
+  const params = {
+    to_email: email,
+    subject: isWaiting ? "Sei in lista d'attesa!" : "Iscrizione confermata!",
+    message: isWaiting
+      ? `Ciao ${name}! Sei stato aggiunto alla lista d'attesa. Ti avviseremo appena si libera un posto.`
+      : `Ciao ${name}! La tua iscrizione è confermata. Ti aspettiamo in campo! ⚽`,
+    player_name: name,
+    player_option: selectedOption === 'cena' ? 'Partita + Cena 🍕' : 'Solo Partita ⚽',
+    match_date: formatDate(currentMatch?.date),
+    match_time: currentMatch?.time || '',
+    match_field: currentMatch?.field || 'Da definire',
+  };
+  emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, params)
+    .then(() => console.log('✅ Email inviata a', email))
+    .catch(e => console.error('❌ Errore email:', e));
+}
+
+function sendEmailNuovaPartita(players) {
+  players.forEach(p => {
+    if (!p.email) return;
+    const params = {
+      to_email: p.email,
+      subject: '🚨 Nuova partita creata!',
+      message: `Ciao ${p.name}! È stata creata una nuova partita. Iscriviti subito su calcetto-bps.netlify.app`,
+      player_name: p.name,
+      player_option: '',
+      match_date: formatDate(currentMatch?.date),
+      match_time: currentMatch?.time || '',
+      match_field: currentMatch?.field || 'Da definire',
+    };
+    emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, params)
+      .catch(e => console.error('Errore email broadcast:', e));
+  });
+}
+
+function sendEmailPromozione(player) {
+  const params = {
+    to_email: player.email,
+    subject: '🎉 Sei entrato in squadra!',
+    message: `Ciao ${player.name}! Si è liberato un posto e sei ora ufficialmente iscritto alla partita. Ti aspettiamo! ⚽`,
+    player_name: player.name,
+    player_option: player.option === 'cena' ? 'Partita + Cena 🍕' : 'Solo Partita ⚽',
+    match_date: formatDate(currentMatch?.date),
+    match_time: currentMatch?.time || '',
+    match_field: currentMatch?.field || 'Da definire',
+  };
+  emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, params)
+    .catch(e => console.error('Errore email promozione:', e));
 }
 
 init();
